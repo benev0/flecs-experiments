@@ -14,6 +14,7 @@ let
     xorg.libXrandr
     xorg.libXi
     raylib
+    glibc
   ];
 
 in pkgs.mkShell {

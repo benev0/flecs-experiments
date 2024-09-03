@@ -8,12 +8,12 @@ ODCL = $(OD)/client
 ODSE = $(OD)/server
 ODSH = $(OD)/shared
 
-CLIENT_OBJS = $(ODCL)/main.o
-# SERVER_OBJS =
-# SHARED_OBJS =
+CLIENT_OBJS = $(ODCL)/main.o $(ODCL)/game.o
+SERVER_OBJS =
+SHARED_OBJS = $(ODSH)/flecs.o
 
 CFLAGS = -std=gnu99 -O2 -g -c -Wall -I $(INC)
-CLIENT_LDFLAGS = -lglfw -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi -lraylib
+CLIENT_LDFLAGS = -lglfw -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi -lraylib -lm
 
 
 $(ODCL)/%.o: client/%.c
@@ -39,5 +39,7 @@ server: $(SERVER_OBJS) $(SHARED_OBJS)
 	$(CC) $(SERVER_OBJS) $(SHARED_OBJS) -o $(BIN)/server
 
 $(ODCL)/main.o:
+
+$(ODCL)/game.o: $(INC)/game.h
 
 $(ODSH)/flecs.o: $(INC)/flecs.h

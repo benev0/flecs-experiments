@@ -1,26 +1,28 @@
 #include "raylib.h"
+#include "flecs.h"
+#include "game.h"
 
+// https://github.com/pope/raylib-flecs-pong/blob/main/src/pong.c
 
 int main(void)
 {
-    const int screenWidth = 800;
-    const int screenHeight = 450;
 
-    InitWindow(screenWidth, screenHeight, "Inventory System Demo");
+    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Menus Test");
 
-    SetTargetFPS(60);
+    ecs_world_t *world = ecs_init();
+    ecs_set_threads(world, 2);
+    ecs_log_set_level (-1);
+    ecs_log_enable_colors (true);
+    ecs_set_target_fps (world, 60);
 
+    ecs_singleton_set(world, EcsRest, { 0 });
+    ECS_IMPORT(world, FlecsStats);
 
-    // Main game loop
-    while (!WindowShouldClose())
-    {
-        BeginDrawing();
-            ClearBackground(RAYWHITE);
-            DrawText("Congrats! You created your first window!", 190, 200, 20, LIGHTGRAY);
-        EndDrawing();
-    }
+    setup_game(world);
 
+    while (!WindowShouldClose() && ecs_progress(world, 0.0)) { }
 
+    ecs_fini(world);
     CloseWindow();
 
     return 0;
