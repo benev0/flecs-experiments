@@ -13,6 +13,7 @@ typedef struct {
 } DiscreteSize;
 
 typedef DiscreteSize DiscretePosition;
+typedef DiscreteSize StoresAt;
 
 // for control
 ECS_STRUCT(Player, {
@@ -20,6 +21,15 @@ ECS_STRUCT(Player, {
         int32_t down_key;
 });
 
+ECS_STRUCT_DECLARE(StoresAt, {
+        int8_t x;
+        int8_t y;
+});
+
+ECS_STRUCT_DECLARE(DiscreteSize, {
+        int8_t x;
+        int8_t y;
+});
 
 ECS_STRUCT_DECLARE(Position, {
         float x;
@@ -29,6 +39,7 @@ ECS_STRUCT_DECLARE(Position, {
 ECS_TAG_DECLARE(Grabbable);
 ECS_TAG_DECLARE(Grabbing);
 ECS_TAG_DECLARE(Dropped);
+ECS_TAG_DECLARE(Item);
 
 
 static void CheckPause(ecs_iter_t *it)
@@ -108,6 +119,7 @@ static void HandleGrab(ecs_iter_t *it)
 
 static void HandelDrag(ecs_iter_t *it)
 {
+        // do on a per player basis for multiplayer
         Vector2 delta = GetMouseDelta();
 
         for (int i = 0; i < it->count; i++) {
@@ -117,20 +129,29 @@ static void HandelDrag(ecs_iter_t *it)
                         if (!ecs_has_id(it->world, e, ecs_id(Position))) {
                                 continue;
                         }
+
                         Position *p = ecs_get_id(it->world, e, ecs_id(Position));
+                        DiscreteSize *s = ecs_get_id(it->world, e, ecs_id(DiscreteSize));
+
                         p->x += delta.x;
                         p->y += delta.y;
 
-                        if (IsMouseButtonUp(MOUSE_BUTTON_LEFT)){
+                        if (IsMouseButtonUp(MOUSE_BUTTON_LEFT)) {
                                 //end grab
                                 ecs_remove_pair(it->world, it->entities[i], Grabbing, e);
                                 ecs_add_id(it->world, e, Dropped);
+                        }
+
+                        if (IsKeyPressed(KEY_R)) {
+                                s->x ^= s->y;
+                                s->y ^= s->x;
+                                s->x ^= s->y;
                         }
                 }
         }
 }
 
-static void HandleDrop(ecs_iter_t *it) {
+static void HandelDrop(ecs_iter_t *it) {
         Position *p = ecs_field(it, Position, 0);
         DiscreteSize *s = ecs_field(it, DiscreteSize, 1);
 
@@ -143,12 +164,84 @@ static void HandleDrop(ecs_iter_t *it) {
                                 Position *menu_p = ecs_field(&menu_it, Position, 0);
                                 DiscreteSize *menu_s = ecs_field(&menu_it, DiscreteSize, 1);
 
-                                Rectangle r = {menu_p[j].x, menu_p[j].y, menu_s[j].x * 20, menu_s[j].y * 20};
+                                Rectangle r = {menu_p[j].x, menu_p[j].y, menu_s[j].x * 20 - 1, menu_s[j].y * 20 - 1};
 
                                 if (CheckCollisionPointRec(p[i], r)) {
-                                        p[i].x = (((int32_t) (p[i].x - menu_p[j].x)) / (20)) * 20 + menu_p[j].x + 10;
-                                        p[i].y = (((int32_t) (p[i].y - menu_p[j].y)) / (20)) * 20 + menu_p[j].y + 10;
                                         found = true;
+                                        DiscretePosition tp = {((int32_t) (p[i].x - menu_p[j].x)) / 20, ((int32_t) (p[i].y - menu_p[j].y)) / 20};
+
+                                        bool collide = false;
+                                        ecs_entity_t first = 0;
+                                        ecs_entity_t second = 0;
+
+                                        ecs_type_t *type = ecs_get_type(it->world, menu_it.entities[j]);
+
+                                        ecs_entity_t e;
+                                        StoresAt *inv_loc = 0;
+
+                                        for (int k = 0; !collide && k < type->count; k++) {
+                                                ecs_id_t id = type->array[k];
+                                                if (!ECS_IS_PAIR(id)) {
+                                                        continue;
+                                                }
+
+                                                ecs_entity_t first = ecs_pair_first(it->world, id);
+                                                ecs_entity_t second = ecs_pair_second(it->world, id);
+
+                                                if (!ecs_has_id(it->world, second, Item)) {
+                                                        continue;
+                                                }
+
+                                                StoresAt *inv_loc = ecs_get_pair(it->world, menu_it.entities[j], StoresAt, second);
+
+                                                if (!inv_loc) {
+                                                        continue;
+                                                }
+
+                                                //DiscreteSize *s1 = ecs_get(it->world, it->entities[i], DiscreteSize);
+                                                const DiscreteSize *s2 = ecs_get_id(it->world, second, ecs_id(DiscreteSize));
+
+
+                                                collide = second != it->entities[i]
+                                                        && CheckCollisionRecs(
+                                                                (Rectangle){tp.x, tp.y, s->y, s->x},
+                                                                (Rectangle){inv_loc->x, inv_loc->y, s2->y, s2->x});
+                                                        // add check for inv overflow
+                                        }
+                                        // get all items in said inventory
+                                        // test against all items in inventory
+                                        if (!collide) {
+                                                p[i].x = tp.x * 20 + menu_p[j].x + 10;
+                                                p[i].y = tp.y * 20 + menu_p[j].y + 10;
+
+                                                ecs_set_pair(it->world, menu_it.entities[j], StoresAt, it->entities[i], {tp.x, tp.y});
+                                        } else {
+                                                const StoresAt *inv_loc = ecs_get_pair(it->world, menu_it.entities[j], StoresAt, second);
+                                                if (inv_loc) {
+                                                        p[i].x = inv_loc->x * 20 + menu_p[j].x + 10;
+                                                        p[i].y = inv_loc->y * 20 + menu_p[j].y + 10;
+                                                }
+                                                else {
+                                                        printf("collide\n");
+                                                        // update to old pos
+                                                }
+                                        }
+                                } else {
+                                        ecs_query_t *inv_has_item = ecs_query(it->world, {
+                                                .terms[0] = ecs_pair(ecs_id(StoresAt), it->entities[i])
+                                        });
+
+                                        ecs_iter_t it_inv = ecs_query_iter(it->world, inv_has_item);
+
+                                        while (ecs_query_next(&it_inv)) {
+                                                for (int l = 0; l < it_inv.count; l++) {
+                                                        ecs_remove_pair(it->world, it_inv.entities[l], ecs_id(StoresAt), it->entities[i]);
+                                                }
+                                        }
+
+                                        // ecs_pair_t
+
+                                        ecs_query_fini(inv_has_item);
                                 }
                         }
                 }
@@ -181,12 +274,17 @@ static void RenderItems(ecs_iter_t *it)
         const DiscreteSize *s = ecs_field(it, DiscreteSize, 1);
 
         for (int i=0; i < it->count; i++) {
-                Color c = RED;
+                Color color = RED;
                 if (ecs_has_id(it->world, it->entities[i], Grabbable)){
-                        c = GREEN;
+                        color = GREEN;
                 }
 
-                DrawCircle(p[i].x, p[i].y, 10, c);
+
+                for (int c = 0; c < s[i].x; c++) {
+                        for (int r = 0; r < s[i].y; r++) {
+                                DrawCircle(p[i].x + 20 * r, p[i].y + 20 * c, 10, color);
+                        }
+                }
         }
 }
 
@@ -208,15 +306,17 @@ void setup_game(ecs_world_t *world)
 {
         // definitions
         ECS_COMPONENT_DEFINE(world, Position);
+        ECS_COMPONENT_DEFINE(world, StoresAt);
+        ECS_COMPONENT_DEFINE(world, DiscreteSize);
 
-        ECS_COMPONENT(world, DiscreteSize);
-        ecs_struct(world,
-        {       .entity = ecs_id(DiscreteSize),
-                .members = {
-                        { .name = "w", .type = ecs_id(ecs_i8_t) },
-                        { .name = "h", .type = ecs_id(ecs_i8_t) }
-                }
-        });
+        // ECS_COMPONENT(world, DiscreteSize);
+        // ecs_struct(world,
+        // {       .entity = ecs_id(DiscreteSize),
+        //         .members = {
+        //                 { .name = "w", .type = ecs_id(ecs_i8_t) },
+        //                 { .name = "h", .type = ecs_id(ecs_i8_t) }
+        //         }
+        // });
 
         ECS_COMPONENT(world, DiscretePosition);
         ecs_struct(world,
@@ -230,7 +330,7 @@ void setup_game(ecs_world_t *world)
         ECS_META_COMPONENT(world, Player);
 
         // ECS_TAG(world, Ball);
-        ECS_TAG(world, Item);
+        ECS_TAG_DEFINE(world, Item);
         ECS_TAG(world, Menu);
 
         ECS_TAG_DEFINE(world, Grabbable);
@@ -241,7 +341,7 @@ void setup_game(ecs_world_t *world)
         {
                 ecs_entity_t e = ecs_entity(world, { .name = "obj.Inventory1"});
                 ecs_set(world, e, Position, {200, 200});
-                ecs_set(world, e, DiscreteSize, {5, 3});
+                ecs_set(world, e, DiscreteSize, {9, 9});
                 ecs_add_id(world, e, Menu);
         }
 
@@ -254,7 +354,7 @@ void setup_game(ecs_world_t *world)
 
         {
                 ecs_entity_t e = ecs_entity(world, { .name = "obj.Item"});
-                ecs_set(world, e, DiscreteSize, {1, 1});
+                ecs_set(world, e, DiscreteSize, {2, 3});
                 ecs_set(world, e, Position, {100, 100});
                 ecs_add_id(world, e, Grabbable);
                 ecs_add_id(world, e, Item);
@@ -262,7 +362,7 @@ void setup_game(ecs_world_t *world)
 
                 {
                 ecs_entity_t e = ecs_entity(world, { .name = "obj.Item.copy"});
-                ecs_set(world, e, DiscreteSize, {1, 1});
+                ecs_set(world, e, DiscreteSize, {3, 1});
                 ecs_set(world, e, Position, {200, 100});
                 ecs_add_id(world, e, Grabbable);
                 ecs_add_id(world, e, Item);
@@ -314,11 +414,11 @@ void setup_game(ecs_world_t *world)
 
                 ecs_system(world,
                 {       .entity = ecs_entity(world,
-                        {       .name = "HandleDrop",
+                        {       .name = "HandelDrop",
                                 .add = ecs_ids(ecs_dependson(EcsOnUpdate), Grabbable, Dropped, ecs_id(Position), ecs_id(DiscreteSize))
                         }),
                         .query.expr = "Position, DiscreteSize, [none] Item, [none] Dropped",
-                        .callback = HandleDrop,
+                        .callback = HandelDrop,
                         .ctx = ecs_query(world, { .expr = "[in] Position, [in] DiscreteSize, [none] Menu, *"} )
                 });
 
